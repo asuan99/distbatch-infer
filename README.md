@@ -54,7 +54,7 @@ results/   CSV output + generated graphs
 - [x] **Phase 1** — CUDA kernels + CPU-reference correctness (atol=1e-3) PASSED.
 - [x] **Phase 2** — Transformer block assembly + PyTorch reference (atol/rtol=1e-2) PASSED.
 - [x] **Phase 3** — single gRPC worker + verify client, end-to-end PASSED.
-- [ ] Phase 4 — OpenMP dispatcher + multi-worker routing.
+- [x] **Phase 4** — OpenMP dispatcher + multi-worker routing PASSED.
 - [ ] Phase 5 — experiment harness, plots, `ncu` profiling / roofline.
 
 ## Correctness
