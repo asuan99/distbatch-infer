@@ -1,0 +1,22 @@
+# Phase 5 stub: dispatcher + N workers orchestration.
+# Requires nvidia-container-toolkit (GPU passthrough).
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["./build/worker"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+  dispatcher:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["./build/dispatcher"]
+    depends_on:
+      - worker

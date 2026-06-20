@@ -1,0 +1,22 @@
+syntax = "proto3";
+package infer;
+
+message InferRequest {
+  int32 batch_size = 1;
+  int32 seq_len    = 2;
+  int32 hidden_dim = 3;
+  repeated float input = 4;   // flattened (B*S*D)
+  int32 request_id = 5;
+}
+
+message InferResponse {
+  repeated float output = 1;
+  double compute_ms = 2;      // worker GPU time
+  double queue_ms   = 3;      // dispatcher queue wait time
+  int32 request_id  = 4;
+  int32 worker_id   = 5;
+}
+
+service InferService {
+  rpc Infer(InferRequest) returns (InferResponse);
+}
