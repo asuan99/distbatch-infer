@@ -37,6 +37,11 @@ add_library(kernels STATIC
 target_include_directories(kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/kernels)
 set_target_properties(kernels PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
+# Compile-time GEMM tile size (8/16/32) for the block-size sweep experiment.
+set(GEMM_TILE 32 CACHE STRING "GEMM tile size (8, 16, or 32)")
+target_compile_definitions(kernels PUBLIC GEMM_TILE=${GEMM_TILE})
+message(STATUS "GEMM_TILE = ${GEMM_TILE}")
+
 # ---------------------------------------------------------------------------
 # Kernel correctness tests (CPU reference, no gRPC needed)
 # ---------------------------------------------------------------------------
@@ -45,6 +50,9 @@ target_link_libraries(test_kernels PRIVATE kernels)
 
 add_executable(test_block tests/test_block.cu)
 target_link_libraries(test_block PRIVATE kernels)
+
+add_executable(bench_kernels tests/bench_kernels.cu)
+target_link_libraries(bench_kernels PRIVATE kernels)
 
 enable_testing()
 add_test(NAME kernels COMMAND test_kernels)
