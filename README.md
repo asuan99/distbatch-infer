@@ -51,14 +51,24 @@ results/   CSV output + generated graphs
 
 ## Status / phases
 - [x] **Phase 0** — scaffold, CMake build passes, `sm_120` verified.
-- [ ] Phase 1 — CUDA kernels + CPU-reference correctness (atol=1e-3).
+- [x] **Phase 1** — CUDA kernels + CPU-reference correctness (atol=1e-3) PASSED.
 - [ ] Phase 2 — Transformer block assembly + PyTorch reference (atol/rtol=1e-2).
 - [ ] Phase 3 — single gRPC worker, end-to-end client request.
 - [ ] Phase 4 — OpenMP dispatcher + multi-worker routing.
 - [ ] Phase 5 — experiment harness, plots, `ncu` profiling / roofline.
 
 ## Correctness
-Recorded per phase as gates are passed (see Phase 1/2).
+
+**Phase 1** (`ctest` / `./build/test_kernels`, ATOL=1e-3, GPU FP32 vs double CPU reference):
+
+| kernel | cases | worst max_abs_err |
+|---|---|---|
+| `gemm_tiled` | 32³, 64×128×256, 67×53×91, 768³ | 5.3e-5 |
+| `batched_gemm` | b=4/12/8 incl. non-multiples | 2.9e-6 |
+| `softmax_reduction` | cols up to 1000, scale=1/√64 | 3.0e-8 |
+| `fused_bias_gelu` | incl. FFN-sized 128×3072 | 4.8e-7 |
+
+All cases PASS (well under 1e-3). Phase 2 adds the PyTorch block reference.
 
 ## Model config (defaults)
 `D=768, H=12, d_head=64, FFN=4D`. LayerNorm / residual / dropout omitted for
