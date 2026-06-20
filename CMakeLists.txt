@@ -20,6 +20,10 @@ message(STATUS "CUDA architecture: ${CMAKE_CUDA_ARCHITECTURES}")
 
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr -lineinfo")
 
+# CUDA runtime for host-compiled targets (worker uses cudaMalloc/events and
+# includes block.cuh which references cudaStream_t).
+find_package(CUDAToolkit REQUIRED)
+
 # ---------------------------------------------------------------------------
 # Kernels library (the core deliverable: hand-written CUDA kernels)
 # ---------------------------------------------------------------------------
@@ -114,7 +118,7 @@ if(BUILD_GRPC)
   target_link_libraries(proto_gen PUBLIC PkgConfig::GRPCPP protobuf::libprotobuf)
 
   add_executable(worker src/worker.cpp)
-  target_link_libraries(worker PRIVATE kernels proto_gen)
+  target_link_libraries(worker PRIVATE kernels proto_gen CUDA::cudart)
 
   add_executable(dispatcher src/dispatcher.cpp)
   target_link_libraries(dispatcher PRIVATE proto_gen)

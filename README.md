@@ -53,7 +53,7 @@ results/   CSV output + generated graphs
 - [x] **Phase 0** — scaffold, CMake build passes, `sm_120` verified.
 - [x] **Phase 1** — CUDA kernels + CPU-reference correctness (atol=1e-3) PASSED.
 - [x] **Phase 2** — Transformer block assembly + PyTorch reference (atol/rtol=1e-2) PASSED.
-- [ ] Phase 3 — single gRPC worker, end-to-end client request.
+- [x] **Phase 3** — single gRPC worker + verify client, end-to-end PASSED.
 - [ ] Phase 4 — OpenMP dispatcher + multi-worker routing.
 - [ ] Phase 5 — experiment harness, plots, `ncu` profiling / roofline.
 
