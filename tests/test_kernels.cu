@@ -8,6 +8,7 @@
 #include "gemm.cuh"
 #include "softmax.cuh"
 #include "gelu.cuh"
+#include "transpose.cuh"
 
 #define CUDA_CHECK(call)                                                      \
   do {                                                                        \
@@ -104,6 +105,92 @@ static bool test_batched_gemm(int batch, int M, int N, int K) {
 }
 
 // ---------------------------------------------------------------------------
+static bool test_batched_gemm_nt(int batch, int M, int N, int K) {
+  // A:(batch,M,K) B:(batch,N,K) C=A@B^T:(batch,M,N)
+  std::vector<float> A(batch * M * K), B(batch * N * K), C(batch * M * N, 0.f);
+  fill_uniform(A);
+  fill_uniform(B);
+
+  float *dA = dev(A), *dB = dev(B), *dC = dev(C);
+  batched_gemm_nt(dA, dB, dC, batch, M, N, K);
+  CUDA_CHECK(cudaGetLastError());
+  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaMemcpy(C.data(), dC, C.size() * sizeof(float),
+                        cudaMemcpyDeviceToHost));
+
+  std::vector<double> ref(batch * M * N);
+  for (int b = 0; b < batch; ++b)
+    for (int i = 0; i < M; ++i)
+      for (int j = 0; j < N; ++j) {
+        double acc = 0.0;
+        const float* Ab = &A[(size_t)b * M * K];
+        const float* Bb = &B[(size_t)b * N * K];
+        for (int k = 0; k < K; ++k) acc += (double)Ab[i * K + k] * Bb[j * K + k];
+        ref[(size_t)b * M * N + i * N + j] = acc;
+      }
+
+  float err = max_abs_diff(C, ref);
+  cudaFree(dA); cudaFree(dB); cudaFree(dC);
+  printf("  batched_gemm_nt b=%-3d M=%-4d N=%-4d K=%-4d  max_abs_err=%.2e  %s\n",
+         batch, M, N, K, err, err < ATOL ? "OK" : "FAIL");
+  return err < ATOL;
+}
+
+// ---------------------------------------------------------------------------
+static bool test_transpose(int B, int S, int H, int dh) {
+  const int D = H * dh;
+  std::vector<float> qkv(B * S * 3 * D);
+  fill_uniform(qkv);
+
+  float *dqkv = dev(qkv);
+  std::vector<float> zq(B * H * S * dh, 0.f);
+  float *dq = dev(zq), *dk = dev(zq), *dv = dev(zq);
+  split_heads(dqkv, dq, dk, dv, B, S, H, dh);
+  CUDA_CHECK(cudaGetLastError());
+  CUDA_CHECK(cudaDeviceSynchronize());
+  std::vector<float> q(B * H * S * dh), k(B * H * S * dh), v(B * H * S * dh);
+  CUDA_CHECK(cudaMemcpy(q.data(), dq, q.size() * sizeof(float), cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(k.data(), dk, k.size() * sizeof(float), cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(v.data(), dv, v.size() * sizeof(float), cudaMemcpyDeviceToHost));
+
+  // CPU reference for split
+  float errs = 0.f;
+  for (int b = 0; b < B; ++b)
+    for (int h = 0; h < H; ++h)
+      for (int s = 0; s < S; ++s)
+        for (int e = 0; e < dh; ++e) {
+          long dst = ((long)(b * H + h) * S + s) * dh + e;
+          long base = (long)(b * S + s) * (3 * D) + h * dh + e;
+          errs = std::fmax(errs, std::fabs(q[dst] - qkv[base + 0 * D]));
+          errs = std::fmax(errs, std::fabs(k[dst] - qkv[base + 1 * D]));
+          errs = std::fmax(errs, std::fabs(v[dst] - qkv[base + 2 * D]));
+        }
+
+  // merge(split V layout) should reconstruct V slice into (B,S,D)
+  float* dout = dev(std::vector<float>(B * S * D, 0.f));
+  merge_heads(dv, dout, B, S, H, dh);
+  CUDA_CHECK(cudaGetLastError());
+  CUDA_CHECK(cudaDeviceSynchronize());
+  std::vector<float> out(B * S * D);
+  CUDA_CHECK(cudaMemcpy(out.data(), dout, out.size() * sizeof(float), cudaMemcpyDeviceToHost));
+  float errm = 0.f;
+  for (int b = 0; b < B; ++b)
+    for (int s = 0; s < S; ++s)
+      for (int h = 0; h < H; ++h)
+        for (int e = 0; e < dh; ++e) {
+          long base = (long)(b * S + s) * (3 * D) + 2 * D + h * dh + e;  // V block
+          long dst = (long)(b * S + s) * D + h * dh + e;
+          errm = std::fmax(errm, std::fabs(out[dst] - qkv[base]));
+        }
+
+  cudaFree(dqkv); cudaFree(dq); cudaFree(dk); cudaFree(dv); cudaFree(dout);
+  bool ok = errs == 0.f && errm == 0.f;
+  printf("  transpose    B=%d S=%d H=%d dh=%d  split_err=%.0f merge_err=%.0f  %s\n",
+         B, S, H, dh, errs, errm, ok ? "OK" : "FAIL");
+  return ok;
+}
+
+// ---------------------------------------------------------------------------
 static bool test_softmax(int batch, int rows, int cols, float scale) {
   std::vector<float> X(batch * rows * cols);
   fill_uniform(X, -3.f, 3.f);
@@ -187,6 +274,16 @@ int main() {
   ok &= test_batched_gemm(4, 32, 32, 32);
   ok &= test_batched_gemm(12, 64, 64, 64);   // B*H heads, S=64, d_head=64
   ok &= test_batched_gemm(8, 50, 70, 33);    // non-multiples
+
+  printf("[batched_gemm_nt] (QK^T)\n");
+  ok &= test_batched_gemm_nt(4, 32, 32, 32);
+  ok &= test_batched_gemm_nt(12, 64, 64, 16);  // S=64, d_head=16
+  ok &= test_batched_gemm_nt(8, 50, 70, 33);   // non-multiples
+
+  printf("[transpose_heads]\n");
+  ok &= test_transpose(2, 32, 8, 16);          // B,S,H,d_head
+  ok &= test_transpose(3, 17, 4, 16);          // non-multiple S
+  ok &= test_transpose(1, 8, 12, 64);          // model head dims
 
   printf("[softmax_reduction]\n");
   ok &= test_softmax(1, 8, 32, 1.0f);

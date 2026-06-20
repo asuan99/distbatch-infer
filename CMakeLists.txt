@@ -27,6 +27,7 @@ add_library(kernels STATIC
   kernels/gemm.cu
   kernels/softmax.cu
   kernels/gelu.cu
+  kernels/transpose.cu
   kernels/block.cu
 )
 target_include_directories(kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/kernels)
@@ -38,8 +39,22 @@ set_target_properties(kernels PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 add_executable(test_kernels tests/test_kernels.cu)
 target_link_libraries(test_kernels PRIVATE kernels)
 
+add_executable(test_block tests/test_block.cu)
+target_link_libraries(test_block PRIVATE kernels)
+
 enable_testing()
 add_test(NAME kernels COMMAND test_kernels)
+
+# Block test: generate PyTorch fixtures (setup fixture), then compare.
+find_program(PYTHON3_EXE python3)
+if(PYTHON3_EXE)
+  add_test(NAME gen_fixtures
+           COMMAND ${PYTHON3_EXE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ref_block.py
+                   --out ${CMAKE_CURRENT_BINARY_DIR}/fixtures)
+  set_tests_properties(gen_fixtures PROPERTIES FIXTURES_SETUP BLOCKFIX)
+  add_test(NAME block COMMAND test_block ${CMAKE_CURRENT_BINARY_DIR}/fixtures)
+  set_tests_properties(block PROPERTIES FIXTURES_REQUIRED BLOCKFIX)
+endif()
 
 # ---------------------------------------------------------------------------
 # OpenMP (dispatcher)

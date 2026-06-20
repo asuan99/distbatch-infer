@@ -1,4 +1,5 @@
 build/
+fixtures/
 results/*.csv
 results/*.png
 *.bin

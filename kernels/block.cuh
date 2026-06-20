@@ -37,6 +37,10 @@ struct BlockScratch {
 
 size_t block_scratch_bytes(const BlockConfig& cfg);
 
+// Partition a single device allocation of `block_scratch_bytes(cfg)` bytes into
+// the individual scratch buffers. `base` must point to that allocation.
+void block_scratch_partition(BlockScratch& s, void* base, const BlockConfig& cfg);
+
 // x: (B, S, D) device pointer (input). out: (B, S, D) device pointer.
 void transformer_block_forward(const float* dx, float* dout,
                                const BlockWeights& w, const BlockConfig& cfg,
