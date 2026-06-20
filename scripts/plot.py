@@ -75,9 +75,15 @@ def plot_seq():
     s = [r["seq_len"] for r in rows]
     lat = [r["lat_mean_ms"] for r in rows]
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(s, lat, "o-", color="tab:green")
+    ax.plot(s, lat, "o-", color="tab:green", label="measured")
+    # O(S^2) reference anchored at the first point
+    guide = [lat[0] * (x / s[0]) ** 2 for x in s]
+    ax.plot(s, guide, "k--", alpha=0.4, label="O(S²) reference")
+    ax.set_xscale("log", base=2)
+    ax.set_yscale("log")
     ax.set_xlabel("sequence length")
     ax.set_ylabel("latency (ms)")
+    ax.legend()
     ax.set_title("Sequence length scaling (1 worker, batch=1)")
     save(fig, "seqlen_scaling.png")
 
@@ -121,18 +127,22 @@ def plot_breakdown():
     rows = load("breakdown.csv")
     if not rows:
         return
-    r = rows[-1]
-    parts = [("queue", r["queue_mean_ms"]),
-             ("GPU compute", r["compute_mean_ms"]),
-             ("serialize+transport+H2D/D2H", r["other_mean_ms"])]
-    fig, ax = plt.subplots(figsize=(5, 5))
-    bottom = 0.0
-    colors = ["tab:red", "tab:blue", "tab:gray"]
-    for (label, val), c in zip(parts, colors):
-        ax.bar(["e2e latency"], [val], bottom=[bottom], label=f"{label} ({val:.1f}ms)", color=c)
-        bottom += val
+    rows.sort(key=lambda r: r["req_bytes"])
+    labels = [f'{r["tag"]}\n{int(r["req_bytes"])//1024}KB' for r in rows]
+    q = [r["queue_mean_ms"] for r in rows]
+    c = [r["compute_mean_ms"] for r in rows]
+    o = [r["other_mean_ms"] for r in rows]
+    x = list(range(len(rows)))
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.bar(x, q, label="queue", color="tab:red")
+    ax.bar(x, c, bottom=q, label="GPU compute", color="tab:blue")
+    bottom2 = [qi + ci for qi, ci in zip(q, c)]
+    ax.bar(x, o, bottom=bottom2, label="serialize+transport+H2D/D2H", color="tab:gray")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_xlabel("request config (batch/seq, payload)")
     ax.set_ylabel("latency (ms)")
-    ax.set_title(f"Latency breakdown (batch=8 S=256, {int(r['req_bytes'])}B)")
+    ax.set_title("Latency breakdown vs request payload")
     ax.legend()
     save(fig, "breakdown.png")
 

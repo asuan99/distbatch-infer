@@ -45,13 +45,17 @@ start_dispatcher() {  # csv maxbatch -> sets DPID
   for _ in $(seq 1 100); do grep -q listening /tmp/disp.log && break; sleep 0.05; done
 }
 
+# adaptive request counts so heavy points stay bounded in wall-clock time
+reqs_batch() { local b=$1; if [ "$b" -le 64 ]; then echo 300; elif [ "$b" -le 512 ]; then echo 120; else echo 50; fi; }
+reqs_seq()   { local s=$1; if [ "$s" -le 512 ]; then echo 200; elif [ "$s" -le 2048 ]; then echo 80; else echo 30; fi; }
+
 echo "=================================================================="
 echo " 1) GPU batch scaling (direct to 1 worker)"
 echo "=================================================================="
 rm -f "$RES/batch_scaling.csv"
 CSV=$(start_workers 1 $WORKER_BASE)
-for b in 1 2 4 8 16 32 64 128 256; do
-  "$BUILD/client" --target "$CSV" --requests "$REQUESTS" --concurrency "$CONC" \
+for b in 1 2 4 8 16 32 64 128 256 512 1024 2048; do
+  "$BUILD/client" --target "$CSV" --requests "$(reqs_batch $b)" --concurrency "$CONC" \
     --batch "$b" --seq_len 32 --hidden_dim 128 \
     --csv "$RES/batch_scaling.csv" --tag "batch$b" | sed -n '2p'
 done
@@ -62,8 +66,8 @@ echo " 2) Seq length scaling (direct to 1 worker)"
 echo "=================================================================="
 rm -f "$RES/seqlen_scaling.csv"
 CSV=$(start_workers 1 $WORKER_BASE)
-for s in 128 512 1024 2048; do
-  "$BUILD/client" --target "$CSV" --requests "$((REQUESTS/2))" --concurrency "$CONC" \
+for s in 64 128 256 512 1024 2048 4096 8192; do
+  "$BUILD/client" --target "$CSV" --requests "$(reqs_seq $s)" --concurrency "$CONC" \
     --batch 1 --seq_len "$s" --hidden_dim 128 \
     --csv "$RES/seqlen_scaling.csv" --tag "seq$s" | sed -n '2p'
 done
@@ -73,7 +77,7 @@ echo "=================================================================="
 echo " 3) Worker scaling (dispatcher, big requests so compute matters)"
 echo "=================================================================="
 rm -f "$RES/worker_scaling.csv"
-for n in 1 2 4; do
+for n in 1 2 3 4 6 8; do
   CSV=$(start_workers "$n" $WORKER_BASE)
   start_dispatcher "$CSV" 1            # max-batch 1: one micro-batch per request
   "$BUILD/client" --target "localhost:$DISP_PORT" --requests "$REQUESTS" \
@@ -83,14 +87,18 @@ for n in 1 2 4; do
 done
 
 echo "=================================================================="
-echo " 4) Bottleneck breakdown (dispatcher + 1 worker)"
+echo " 4) Bottleneck breakdown sweep (dispatcher + 1 worker, varying payload)"
 echo "=================================================================="
 rm -f "$RES/breakdown.csv"
 CSV=$(start_workers 1 $WORKER_BASE)
 start_dispatcher "$CSV" 32
-"$BUILD/client" --target "localhost:$DISP_PORT" --requests "$REQUESTS" \
-  --concurrency "$CONC" --batch 8 --seq_len 256 --hidden_dim 128 \
-  --csv "$RES/breakdown.csv" --tag "breakdown" | sed -n '3p'
+# (batch, seq) configs spanning small -> large request payloads
+for cfg in "1 64" "4 128" "8 256" "16 512" "32 1024"; do
+  set -- $cfg; b=$1; s=$2
+  "$BUILD/client" --target "localhost:$DISP_PORT" --requests "$((REQUESTS/2))" \
+    --concurrency "$CONC" --batch "$b" --seq_len "$s" --hidden_dim 128 \
+    --csv "$RES/breakdown.csv" --tag "b${b}s${s}" | sed -n '3p'
+done
 cleanup
 
 echo "=================================================================="
