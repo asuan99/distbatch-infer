@@ -151,17 +151,41 @@ def plot_roofline():
     rows = load("roofline.csv")
     if not rows:
         return
-    fig, ax = plt.subplots(figsize=(6, 4))
+    # RTX 5060 Ti (Blackwell GB206) peaks, FP32:
+    #   compute = 2 * 4608 cores * 3.09 GHz  (36 SM x 128 FP32/SM, max clock)
+    #   bandwidth = 2 * 14.001 GHz * 16 B    (128-bit GDDR7, ~28 Gbps)
+    PEAK_GFLOPS = 2 * 4608 * 3.09           # ~28476 GFLOP/s
+    PEAK_BW = 2 * 14.001 * 16               # ~448 GB/s
+    ridge = PEAK_GFLOPS / PEAK_BW           # FLOP/byte where roofs meet
+
+    import numpy as np
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ai = np.logspace(-2, 3, 200)
+    roof = np.minimum(PEAK_BW * ai, PEAK_GFLOPS)
+    ax.plot(ai, roof, "k-", lw=2, label="roofline")
+    ax.axhline(PEAK_GFLOPS, color="gray", ls="--", alpha=0.6,
+               label=f"FP32 peak {PEAK_GFLOPS/1000:.1f} TFLOP/s")
+    ax.plot(ai, PEAK_BW * ai, color="tab:gray", ls=":", alpha=0.6,
+            label=f"DRAM peak {PEAK_BW:.0f} GB/s")
+    ax.axvline(ridge, color="k", ls=":", alpha=0.3)
+    ax.text(ridge * 1.1, PEAK_GFLOPS * 0.25, f"ridge\n{ridge:.0f} FLOP/B",
+            fontsize=8, alpha=0.7)
+
+    colors = {"gemm": "tab:blue", "gelu": "tab:orange", "softmax": "tab:green"}
     for r in rows:
-        ax.scatter(r["dram_pct"], r["sm_pct"], s=80)
-        ax.annotate(r["kernel"], (r["dram_pct"], r["sm_pct"]),
-                    textcoords="offset points", xytext=(6, 4))
-    ax.set_xlabel("DRAM throughput (% of peak)")
-    ax.set_ylabel("SM/compute throughput (% of peak)")
-    ax.set_xlim(0, 100)
-    ax.set_ylim(0, 100)
-    ax.plot([0, 100], [0, 100], "k:", alpha=0.3)
-    ax.set_title("Kernel roofline position (ncu)")
+        x, y = r["ai_flop_per_byte"], r["gflops"]
+        ax.scatter(x, y, s=110, color=colors.get(r["kernel"], "tab:red"), zorder=5)
+        ax.annotate(f'{r["kernel"]}\n{y:.0f} GFLOP/s',
+                    (x, y), textcoords="offset points", xytext=(8, -4), fontsize=9)
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("arithmetic intensity (FLOP/byte)")
+    ax.set_ylabel("performance (GFLOP/s)")
+    ax.set_ylim(top=PEAK_GFLOPS * 2)
+    ax.set_title("Roofline — RTX 5060 Ti (FP32, measured by ncu)")
+    ax.legend(loc="lower right", fontsize=8)
+    ax.grid(True, which="both", alpha=0.2)
     save(fig, "roofline.png")
 
 
