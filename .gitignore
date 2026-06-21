@@ -1,8 +1,6 @@
 build/
 build_tile*/
 fixtures/
-results/*.csv
-results/*.png
 *.bin
 __pycache__/
 *.pyc

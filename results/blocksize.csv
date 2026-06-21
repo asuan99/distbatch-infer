@@ -1,0 +1,4 @@
+tag,target,requests_ok,requests,concurrency,batch,seq_len,hidden_dim,wall_ms,throughput_rps,lat_mean_ms,lat_p50_ms,lat_p99_ms,queue_mean_ms,compute_mean_ms,other_mean_ms,req_bytes
+tile8,localhost:50061,400,400,16,16,128,128,567.062,705.39,22.1335,22.2754,29.7009,0,0.919416,21.214,1048576
+tile16,localhost:50061,400,400,16,16,128,128,532.615,751.012,20.768,20.8552,30.2074,0,0.805596,19.9624,1048576
+tile32,localhost:50061,400,400,16,16,128,128,603.378,662.935,23.5414,23.2081,29.9207,0,0.963689,22.5777,1048576
