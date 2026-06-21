@@ -2,5 +2,10 @@ build/
 build_tile*/
 fixtures/
 *.bin
+
+# course handout + local report draft (not for submission repo)
+Project_Description(2026).pdf
+REPORT.md
+REPORT.pdf
 __pycache__/
 *.pyc
