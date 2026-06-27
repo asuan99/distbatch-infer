@@ -155,19 +155,36 @@ contention — not extra compute.
 22.1 / 20.8 / 23.5ms latency at (batch=16,S=128); TILE=16 is best for these
 small (D=128) matrices.
 
-**Bottleneck breakdown** (`results/breakdown.png`) — swept over request payloads
-from 32KB to 16MB (queue / GPU compute / serialize+transport+H2D·D2H, ms):
+**Bottleneck breakdown** (`results/breakdown.png`) — per-request decomposition
+at **concurrency=1** (no contention) over payloads 32KB→16MB (queue / GPU
+compute / serialize+transport+H2D·D2H, ms):
 
-| config | payload | queue | compute | transport |
+| config | payload | queue | compute | other |
 |---|---|---|---|---|
-| b1 s64   | 32KB  | 7.7  | 0.5   | 5.9   |
-| b4 s128  | 256KB | 7.7  | 3.8   | 19.3  |
-| b8 s256  | 1MB   | 21.2 | 18.7  | 46.5  |
-| b16 s512 | 4MB   | 96.9 | 88.6  | 162.1 |
-| b32 s1024| 16MB  | 26.4 | 146.4 | 192.9 |
+| b1 s64   | 32KB  | 6.5 | 0.1  | 0.7  |
+| b4 s128  | 256KB | 6.5 | 0.3  | 2.0  |
+| b8 s256  | 1MB   | 6.5 | 1.2  | 4.1  |
+| b16 s512 | 4MB   | 7.7 | 7.2  | 17.6 |
+| b32 s1024| 16MB  | 9.5 | 46.8 | 47.9 |
 
-Clear crossover: small payloads are **transport/serialize-bound** (the documented
-protobuf-payload bottleneck); large payloads become **GPU-compute-bound**.
+`queue` is a flat ~6.5ms floor = the dispatcher's 5ms batching window (fixed
+overhead). `other` (communication) scales with payload, and `compute` overtakes
+it for large requests (window/transport-bound → compute-bound crossover).
+
+**Is the large queue/communication seen under load a bug? No.** Controlled check
+on the same 1MB request:
+
+| scenario | latency | queue | compute | other(comm) |
+|---|---|---|---|---|
+| A. direct to worker, conc=1 | 2.1 | 0.0 | 1.2 | **0.9** |
+| B. via dispatcher, conc=1   | 11.9 | 6.5 | 1.2 | 4.3 |
+| C. via dispatcher, conc=16  | 80.0 | 20.8 | 17.2 | 42.0 |
+
+Communication is only **0.9ms per 1MB in isolation** (A) — no leak. Under high
+concurrency (C) the dispatcher merges 16×1MB into one 16MB worker call, so each
+request's `compute`/`other` reflect the *whole merged batch* (batching trades
+latency for throughput); `queue+compute+other = latency` stays consistent. The
+large numbers are a saturated/batched regime, not a measurement error.
 
 ## Model config
 Worker default loaded from `fixtures/dims.txt`: `D=128, H=8, d_head=16, FFN=4D`

@@ -88,6 +88,8 @@ done
 
 echo "=================================================================="
 echo " 4) Bottleneck breakdown sweep (dispatcher + 1 worker, varying payload)"
+echo "    concurrency=1 -> clean per-request decomposition (no contention/"
+echo "    batch-merging inflation). queue floor = batching window."
 echo "=================================================================="
 rm -f "$RES/breakdown.csv"
 CSV=$(start_workers 1 $WORKER_BASE)
@@ -96,7 +98,7 @@ start_dispatcher "$CSV" 32
 for cfg in "1 64" "4 128" "8 256" "16 512" "32 1024"; do
   set -- $cfg; b=$1; s=$2
   "$BUILD/client" --target "localhost:$DISP_PORT" --requests "$((REQUESTS/2))" \
-    --concurrency "$CONC" --batch "$b" --seq_len "$s" --hidden_dim 128 \
+    --concurrency 1 --batch "$b" --seq_len "$s" --hidden_dim 128 \
     --csv "$RES/breakdown.csv" --tag "b${b}s${s}" | sed -n '3p'
 done
 cleanup

@@ -97,14 +97,32 @@ def plot_workers():
     tp = [r["throughput_rps"] for r in rows]
     base = tp[0] if tp else 1.0
     speedup = [t / base for t in tp]
-    fig, ax1 = plt.subplots(figsize=(6, 4))
-    ax1.plot(n, speedup, "o-", color="tab:purple", label="speedup")
-    ax1.plot(n, n, "k:", alpha=0.5, label="ideal")
-    ax1.set_xlabel("# workers (sharing one GPU)")
-    ax1.set_ylabel("speedup vs 1 worker")
-    ax1.set_xticks(n)
-    ax1.legend(loc="upper left")
-    ax1.set_title("Worker scaling (dispatcher, batch=8 S=256)")
+    x = list(range(len(n)))
+
+    fig, ax1 = plt.subplots(figsize=(7, 4.5))
+    ax1.bar(x, tp, color="tab:purple", alpha=0.65, label="throughput")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(n)
+    ax1.set_xlabel("# workers (all sharing one physical GPU)")
+    ax1.set_ylabel("throughput (req/s)", color="tab:purple")
+    ax1.tick_params(axis="y", labelcolor="tab:purple")
+    ax1.set_ylim(0, max(tp) * 1.18)
+    for xi, t in zip(x, tp):
+        ax1.text(xi, t + max(tp) * 0.02, f"{t:.0f}", ha="center", fontsize=8,
+                 color="tab:purple")
+
+    ax2 = ax1.twinx()
+    ax2.plot(x, speedup, "o-", color="tab:red", lw=2, label="speedup")
+    ax2.axhline(1.0, color="gray", ls=":", alpha=0.6)
+    ax2.set_ylabel("speedup vs 1 worker", color="tab:red")
+    ax2.tick_params(axis="y", labelcolor="tab:red")
+    ax2.set_ylim(0.9, max(speedup) * 1.25)
+    for xi, s in zip(x, speedup):
+        ax2.annotate(f"{s:.2f}×", (xi, s), textcoords="offset points",
+                     xytext=(0, 7), ha="center", fontsize=8, color="tab:red")
+
+    ax1.set_title("Worker scaling — throughput peaks at 2–3 workers, then declines\n"
+                  "(all workers time-share one GPU; ideal would be N×, off-chart)")
     save(fig, "worker_scaling.png")
 
 
@@ -142,7 +160,8 @@ def plot_breakdown():
     ax.set_xticklabels(labels)
     ax.set_xlabel("request config (batch/seq, payload)")
     ax.set_ylabel("latency (ms)")
-    ax.set_title("Latency breakdown vs request payload")
+    ax.set_title("Per-request latency breakdown vs payload (concurrency=1)\n"
+                 "queue floor = 5ms batching window; 'other' = serialize+transport+H2D/D2H")
     ax.legend()
     save(fig, "breakdown.png")
 
